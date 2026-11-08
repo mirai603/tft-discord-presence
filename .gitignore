@@ -1,0 +1,20 @@
+# Personal settings: Discord app id, Riot API key
+config.json
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Runtime output
+tft_rpc.log
+tft_rpc.log.old
+
+# Debug output: screenshots of your game, and probe/explore dumps that
+# can contain account and friends-list details
+calibrate_*.png
+replay_*.png
+*.png
+probe_output.json
+explore_output.json
