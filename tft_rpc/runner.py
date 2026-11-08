@@ -21,12 +21,27 @@ class PresenceRunner:
         self.on_status = on_status or (lambda text, kind: None)
         self.stop_event = threading.Event()
         self.paused = threading.Event()
+        self.hp_reader = None
+        self._save_screenshots = None  # None = use config's setting
         self._status = None
 
     def _set_status(self, text, kind):
         if (text, kind) != self._status:
             self._status = (text, kind)
             self.on_status(text, kind)
+
+    @property
+    def saving_screenshots(self):
+        d = getattr(self.hp_reader, "diagnostics", None)
+        if d is not None:
+            return d.enabled
+        return bool(self._save_screenshots)
+
+    def set_saving_screenshots(self, on):
+        self._save_screenshots = bool(on)
+        d = getattr(self.hp_reader, "diagnostics", None)
+        if d is not None:
+            d.enabled = bool(on)
 
     def stop(self):
         self.stop_event.set()
@@ -60,6 +75,9 @@ class PresenceRunner:
         logw = LogWatcher()
         reader = make_reader(cfg)
         hp_reader = make_hp_reader(cfg)
+        self.hp_reader = hp_reader
+        if self._save_screenshots is not None and getattr(hp_reader, "diagnostics", None):
+            hp_reader.diagnostics.enabled = self._save_screenshots
         ranked = make_ranked(cfg, rc)
         poll = cfg.get("poll_seconds", 3)
         min_update = max(15, cfg.get("min_update_seconds", 15))  # Discord rate-limits updates

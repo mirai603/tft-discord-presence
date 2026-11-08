@@ -8,7 +8,9 @@ re-tested) and a marked-up copy on the right:
   green box   = where your HP was read
   slot ticks  = the 8 list slots with their gold-arrow score; green = chosen
   top label   = the values read
-Only the newest `max_files` images are kept.
+Only the newest `max_files` images are kept. Saving is off until `enabled` is
+set (the tray's "Save HP screenshots" item, or diagnostics.hp_screenshots in
+config.json).
 """
 
 import os
@@ -18,15 +20,17 @@ from PIL import Image, ImageDraw
 
 
 class HPDiagnostics:
-    def __init__(self, folder, max_files=1000, mode="all"):
+    def __init__(self, folder, max_files=1000, mode="all", enabled=False):
         self.folder = folder
         self.max_files = max(10, int(max_files))
         self.mode = mode  # "all" = every read, "changes" = only when the reading changes
         self._last = None
         self._count = 0
-        os.makedirs(folder, exist_ok=True)
+        self.enabled = enabled
 
     def save(self, strip, scale, hp_box, slot_scores, hp, place):
+        if not self.enabled:
+            return
         key = (hp, place)
         if self.mode == "changes" and key == self._last:
             return
@@ -51,6 +55,7 @@ class HPDiagnostics:
             img = Image.new("RGB", (W * 2 + 6, H), (255, 0, 255))
             img.paste(raw, (0, 0))
             img.paste(marked, (W + 6, 0))
+            os.makedirs(self.folder, exist_ok=True)
             stamp = time.strftime("%Y%m%d-%H%M%S")
             name = f"{stamp}_hp-{hp if hp is not None else 'none'}_place-{place if place is not None else 'none'}.png"
             path = os.path.join(self.folder, name)

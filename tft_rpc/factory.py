@@ -8,6 +8,7 @@ from .ranked import Ranked
 from .screen_reader import AVAILABLE as OCR_AVAILABLE, HealthReader, StageReader
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DIAG_DIR = os.path.join(HERE, "diagnostics", "hp")
 
 
 def load_config():
@@ -62,12 +63,11 @@ def make_hp_reader(cfg):
     if not cfg.get("hp_ocr", {}).get("enabled", True) or not OCR_AVAILABLE:
         return None
     diag_cfg = cfg.get("diagnostics", {})
-    diagnostics = None
-    if diag_cfg.get("hp_screenshots", False):
-        from .diagnostics import HPDiagnostics
-        diagnostics = HPDiagnostics(os.path.join(HERE, "diagnostics", "hp"),
-                                    max_files=diag_cfg.get("max_files", 1000),
-                                    mode=diag_cfg.get("mode", "all"))
+    from .diagnostics import HPDiagnostics
+    diagnostics = HPDiagnostics(DIAG_DIR,
+                                max_files=diag_cfg.get("max_files", 1000),
+                                mode=diag_cfg.get("mode", "all"),
+                                enabled=bool(diag_cfg.get("hp_screenshots", False)))
     return HealthReader(
         diagnostics=diagnostics,
         monitor=ocr.get("monitor", 1),

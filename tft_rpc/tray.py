@@ -17,7 +17,7 @@ import time
 from PIL import Image, ImageDraw
 
 from . import startup
-from .factory import HERE, load_config
+from .factory import DIAG_DIR, HERE, load_config
 from .runner import ACTIVE, DISCORD_WAIT, IDLE, PAUSED, PresenceRunner
 
 LOG_PATH = os.path.join(HERE, "tft_rpc.log")
@@ -87,6 +87,7 @@ class TrayApp:
         self.status_kind = IDLE
         self.runner = None
         self.thread = None
+        self.save_screenshots = None  # None until set; then kept across "Reload settings"
         self.icon = pystray.Icon(
             "tft-rpc", _icon_image(IDLE), "TFT Rich Presence", menu=self._menu())
 
@@ -98,8 +99,11 @@ class TrayApp:
             Item("Pause", self._toggle_pause, checked=lambda item: self._paused()),
             Item("Start with Windows", self._toggle_startup,
                  checked=lambda item: startup.is_installed()),
+            Item("Save HP screenshots", self._toggle_screenshots,
+                 checked=lambda item: self._saving()),
             Item("Reload settings", self._reload),
             Item("Open log", lambda icon, item: _open_path(LOG_PATH)),
+            Item("Open screenshots folder", self._open_screenshots),
             Item("Open folder", lambda icon, item: _open_path(HERE)),
             M.SEPARATOR,
             Item("Quit", self._quit),
@@ -117,6 +121,8 @@ class TrayApp:
         self.runner = PresenceRunner(cfg, log=_log, on_status=self._on_status)
         if paused:
             self.runner.paused.set()
+        if self.save_screenshots is not None:
+            self.runner.set_saving_screenshots(self.save_screenshots)
         self.thread = threading.Thread(target=self._run_safely, name="presence", daemon=True)
         self.thread.start()
 
@@ -154,6 +160,21 @@ class TrayApp:
         else:
             self.runner.paused.set()
         self.icon.update_menu()
+
+    def _saving(self):
+        return bool(self.runner and self.runner.saving_screenshots)
+
+    def _toggle_screenshots(self, icon, item):
+        if not self.runner:
+            return
+        self.save_screenshots = not self._saving()
+        self.runner.set_saving_screenshots(self.save_screenshots)
+        _log(f"HP screenshot saving {'on' if self.save_screenshots else 'off'}.")
+        self.icon.update_menu()
+
+    def _open_screenshots(self, icon, item):
+        os.makedirs(DIAG_DIR, exist_ok=True)
+        _open_path(DIAG_DIR)
 
     def _toggle_startup(self, icon, item):
         msg = startup.uninstall() if startup.is_installed() else startup.install()

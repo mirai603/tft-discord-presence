@@ -78,6 +78,10 @@ In Discord, turn on *Settings → Activity Privacy → Share your detected activ
 - `stage_ocr.capture`: `"window"` (default; works windowed, borderless or
   fullscreen) or `"monitor"`.
 - `stage_ocr.only_when_focused`: only read the screen while TFT is the active window.
+- `diagnostics.hp_screenshots`: save the screenshots the HP/placement reader
+  uses to `diagnostics/hp/` (git-ignored), for checking misreads. Off by default;
+  toggle it any time from the tray menu (**Save HP screenshots**). Only the newest
+  `max_files` (default 1000, ~210 KB each) are kept.
 - `riot_api_key`: optional, for rank/LP. Development keys expire every 24 hours;
   a personal key can be requested on the Riot Developer Portal.
 
