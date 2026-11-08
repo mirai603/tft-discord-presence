@@ -10,6 +10,7 @@
   "show": {
     "stage": true,
     "health": true,
+    "placement": true,
     "level": true,
     "gold": false,
     "players_left": true,
@@ -32,7 +33,7 @@
   "stage_ocr": {
     "enabled": true,
     "monitor": 1,
-    "region": [0.367, 0.003, 0.027, 0.028],
+    "region": [0.33, 0.002, 0.15, 0.03],
     "confirm_reads": 2,
     "capture": "window",
     "only_when_focused": true,

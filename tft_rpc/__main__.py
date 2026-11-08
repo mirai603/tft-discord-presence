@@ -62,7 +62,8 @@ def cmd_calibrate(cfg):
     hp_reader = make_hp_reader(cfg)
     if hp_reader:
         hp_reader.only_when_focused = False
-        print(f"HP read: {hp_reader.read_once()!r}")
+        hp, place = hp_reader.read_board()
+        print(f"HP read: {hp!r}   placement: {place!r}")
     print(f"Saved {full} (red box = region) and {crop} (what OCR sees).")
     print(f"OCR read: {reader.read_once()!r}")
     print("Adjust stage_ocr.region in config.json until the box hugs the '3-2' text.")

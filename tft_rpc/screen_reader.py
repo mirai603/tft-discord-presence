@@ -73,7 +73,8 @@ class StageReader:
     def _prep(img):
         # Light text on a dark banner: grayscale, upscale, threshold, invert.
         g = ImageOps.grayscale(img)
-        g = g.resize((g.width * 3, g.height * 3), Image.LANCZOS)
+        factor = max(3, round(90 / max(1, img.height)))  # small windows get zoomed more
+        g = g.resize((g.width * factor, g.height * factor), Image.LANCZOS)
         g = g.point(lambda p: 255 if p > 150 else 0)
         return ImageOps.invert(g)
 
@@ -182,9 +183,25 @@ def find_ring(strip, scale):
     return int(cx), top + int(48 * scale)
 
 
-def read_hp_from_strip(strip, scale):
-    """OCR the HP number in the box just left of the gold ring. scale = height / 1440."""
-    ring = find_ring(strip, scale)
+def _ocr_digits(crop, scale, threshold=150):
+    """OCR a small box of light digits on a dark background. Returns int or None."""
+    g = ImageOps.grayscale(crop)
+    factor = max(3, int(round(4 / max(scale, 0.25))))  # upscale small text more
+    g = g.resize((g.width * factor, g.height * factor), Image.LANCZOS)
+    g = g.point(lambda p: 255 if p > threshold else 0).filter(ImageFilter.MedianFilter(5))
+    g = ImageOps.expand(ImageOps.invert(g), border=20, fill=255)  # margin helps tesseract
+    for psm in (7, 8, 10):  # line, word, then single character
+        text = pytesseract.image_to_string(g, config=f"--psm {psm} -c tessedit_char_whitelist=0123456789")
+        digits = "".join(ch for ch in text if ch.isdigit())
+        if digits:
+            value = int(digits)
+            return value if 0 <= value <= 150 else None
+    return None
+
+
+def read_hp_from_strip(strip, scale, ring=None):
+    """OCR the HP number in the box just left of your gold ring. scale = height / 1440."""
+    ring = ring or find_ring(strip, scale)
     if ring is None:
         return None
     cx, cy = ring
@@ -192,59 +209,174 @@ def read_hp_from_strip(strip, scale):
     box = (int(ring_left - 80 * scale), int(cy - 17 * scale), int(ring_left - 3 * scale), int(cy + 25 * scale))
     if box[0] < 0 or box[1] < 0:
         return None
-    crop = strip.crop(box)
-    g = ImageOps.grayscale(crop)
-    factor = max(3, int(round(4 / max(scale, 0.25))))  # upscale small text more
-    g = g.resize((g.width * factor, g.height * factor), Image.LANCZOS)
-    g = g.point(lambda p: 255 if p > 150 else 0).filter(ImageFilter.MedianFilter(5))  # drop specks
-    g = ImageOps.expand(ImageOps.invert(g), border=20, fill=255)  # margin helps tesseract
-    digits = ""
-    for psm in (7, 8, 10):  # line, word, then single character
-        text = pytesseract.image_to_string(g, config=f"--psm {psm} -c tessedit_char_whitelist=0123456789")
-        digits = "".join(ch for ch in text if ch.isdigit())
-        if digits:
-            break
-    if not digits:
+    return _ocr_digits(strip.crop(box), scale)
+
+
+def _is_digit_px(px):
+    """HP digits: light grey to white, unsaturated (not the gold borders)."""
+    r, g, b = px[:3]
+    return min(r, g, b) > 140 and max(r, g, b) - min(r, g, b) < 45
+
+
+def _runs(strip, x0, x1, scale, min_h, max_h, max_gap=2):
+    """Vertical runs of rows containing digit-like pixels between x0..x1.
+    Returns [(start, end, pixel_count)]."""
+    W, H = strip.size
+    px = strip.load()
+    x0, x1 = max(0, int(x0)), min(W, int(x1))
+    counts = [sum(1 for x in range(x0, x1) if _is_digit_px(px[x, y])) for y in range(H)]
+    out, start, gap, total = [], None, 0, 0
+    gap_limit = max(1, int(max_gap * scale))
+    for y, n in enumerate(counts + [0] * (gap_limit + 2)):
+        if n:
+            if start is None:
+                start, total = y, 0
+            gap, total = 0, total + n
+        elif start is not None:
+            gap += 1
+            if gap > gap_limit:
+                end = y - gap + 1
+                if min_h * scale <= end - start <= max_h * scale:
+                    out.append((start, end, total))
+                start, gap = None, 0
+    return out
+
+
+# Live-match player list, measured from the game's right edge at 1440p.
+# Your HP box digits sit 129-180 px from the edge and are ~20 px tall; other
+# players' HP digits sit 93-124 px from the edge and are ~10-12 px tall.
+MY_DIGITS_X = (180, 129)
+OTHER_DIGITS_X = (124, 93)
+
+
+def find_board(strip, scale):
+    """Return (your_row_centre_y, [other rows' centre y]) in strip pixels.
+
+    Doesn't use the portrait rings: those are HP gauges that drain as players
+    lose HP. The HP numbers themselves are always there.
+    """
+    W = strip.size[0]
+    others = [(a + b) // 2 for a, b, _ in
+              _runs(strip, W - OTHER_DIGITS_X[0] * scale, W - OTHER_DIGITS_X[1] * scale, scale, 5, 16)]
+    mine = [(a, b, n) for a, b, n in
+            _runs(strip, W - MY_DIGITS_X[0] * scale, W - MY_DIGITS_X[1] * scale, scale, 13, 30)
+            # other players' names also reach into this column; drop anything on their rows
+            if all(abs((a + b) // 2 - o) > 14 * scale for o in others)]
+    if not mine:
+        return None, others
+    a, b, _ = max(mine, key=lambda r: r[2])
+    return (a + b) // 2, others
+
+
+def read_my_hp(strip, scale, my_cy):
+    W = strip.size[0]
+    box = (int(W - 184 * scale), int(my_cy - 17 * scale), int(W - 124 * scale), int(my_cy + 17 * scale))
+    if box[0] < 0 or box[1] < 0:
         return None
-    hp = int(digits)
-    return hp if 0 <= hp <= 150 else None
+    return _ocr_digits(strip.crop(box), scale)
+
+
+def list_rows(other_rows, my_cy, scale):
+    """Keep only rows that sit on the player list's spacing, walking out from your row.
+
+    Other players' rows are ~107 px apart (1440p); the gap next to your enlarged
+    row is ~106-122 px. Anything off that rhythm (background sparkles, UI above
+    the list) is dropped. One missed row in between is tolerated.
+    Returns (rows_above, rows_below) as counts.
+    """
+    def walk(candidates):
+        count, last, first = 0, my_cy, True
+        for y in candidates:  # ordered moving away from your row
+            d = abs(y - last)
+            lo, hi = (98, 128) if first else (98, 116)
+            if lo * scale <= d <= hi * scale:
+                count, last, first = count + 1, y, False
+            elif count and 200 * scale <= d <= 226 * scale:  # one row missed
+                count, last = count + 2, y
+            elif d > hi * scale:
+                break
+        return count
+
+    above = sorted((y for y in other_rows if y < my_cy), reverse=True)
+    below = sorted(y for y in other_rows if y > my_cy)
+    return walk(above), walk(below)
+
+
+class _Smoothed:
+    """Only accept a new value after seeing it N times in a row."""
+
+    def __init__(self, confirm):
+        self.confirm, self.value, self._cand, self._n = confirm, None, None, 0
+
+    def feed(self, v):
+        if v is None:
+            return self.value
+        if v == self._cand:
+            self._n += 1
+        else:
+            self._cand, self._n = v, 1
+        if self._n >= self.confirm:
+            self.value = v
+        return self.value
+
+    def reset(self):
+        self.value, self._cand, self._n = None, None, 0
 
 
 class HealthReader(StageReader):
-    """Same window handling and smoothing as StageReader, but reads your HP."""
+    """Reads your HP and placement from the player list (same window handling)."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, track_placement=True, **kwargs):
         kwargs.setdefault("region", HP_STRIP)
         super().__init__(**kwargs)
         self.anchor = "right"
-        self.hp = None
+        self.track_placement = track_placement
+        self._hp = _Smoothed(self.confirm_reads)
+        self._place = _Smoothed(self.confirm_reads)
 
-    def read_once(self):
+    @property
+    def hp(self):
+        return self._hp.value
+
+    @property
+    def placement(self):
+        return self._place.value
+
+    def _grab_strip(self):
         with mss.mss() as sct:
             area = self._area(sct)
             if area is None:
-                return None
+                return None, None
             shot = sct.grab(region_box(area, self.region, self.anchor))
-            strip = Image.frombytes("RGB", shot.size, shot.rgb)
-        return read_hp_from_strip(strip, area["height"] / REF_H)
+            return Image.frombytes("RGB", shot.size, shot.rgb), area["height"] / REF_H
+
+    def read_board(self):
+        """Return (my_hp, placement) from one screenshot."""
+        strip, scale = self._grab_strip()
+        if strip is None:
+            return None, None
+        my_cy, others = find_board(strip, scale)
+        if my_cy is None:
+            return None, None
+        hp = read_my_hp(strip, scale, my_cy)
+        place = 1 + list_rows(others, my_cy, scale)[0] if self.track_placement else None
+        return hp, place
+
+    def read_once(self):
+        return self.read_board()[0]
 
     def update(self):
         if not AVAILABLE:
             return self.hp
         try:
-            reading = self.read_once()
+            hp, place = self.read_board()
         except Exception:
             return self.hp
-        if reading is None:
-            return self.hp
-        if reading == self._candidate:
-            self._count += 1
-        else:
-            self._candidate, self._count = reading, 1
-        if self._count >= self.confirm_reads:
-            self.hp = reading
+        self._hp.feed(hp)
+        self._place.feed(place)
         return self.hp
 
     def reset(self):
         super().reset()
-        self.hp = None
+        self._hp.reset()
+        self._place.reset()

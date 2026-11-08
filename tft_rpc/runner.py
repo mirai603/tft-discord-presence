@@ -113,10 +113,13 @@ class PresenceRunner:
                     if stage and log_stage and int(stage.split("-")[0]) != log_stage:
                         stage = None  # OCR disagrees with the log; fall back to "Stage N"
                     hp = hp_reader.update() if hp_reader else None
-                    if hp is not None:
+                    place = hp_reader.placement if hp_reader else None
+                    if hp is not None or place is not None:
                         if game is None:
                             game = {"health": None, "level": None, "gold": None, "players_alive": None}
-                        game["health"] = hp
+                        if hp is not None:
+                            game["health"] = hp
+                        game["placement"] = place
                 else:
                     started_at = None
                     if reader:

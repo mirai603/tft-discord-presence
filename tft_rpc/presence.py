@@ -4,6 +4,7 @@ import hashlib
 import time
 
 from .riot_client import QUEUES
+from .log_watcher import ordinal
 
 IN_GAME_PHASES = {"InProgress", "Reconnect"}
 PHASE_TEXT = {
@@ -68,6 +69,8 @@ def build(cfg, session, game, stage, rank, game_started_at):
         state_parts = []
         if game["health"] is not None and show.get("health", True):
             state_parts.append(f"{game['health']} HP")
+        if game.get("placement") and show.get("placement", True):
+            state_parts.append(ordinal(game["placement"]))
         if game["level"] is not None and show.get("level", True):
             state_parts.append(f"Lvl {game['level']}")
         if game["gold"] is not None and show.get("gold", False):
@@ -80,8 +83,6 @@ def build(cfg, session, game, stage, rank, game_started_at):
         out["state"] = " · ".join(state_parts) if state_parts else "In Game"
 
         out["start"] = int(game_started_at)
-        if ((session or {}).get("party_size") or 0) > 1:
-            out.update(_party_fields(session, show))
         small = assets.get("queue_icons", {}).get(queue or "", assets.get("small_image"))
         if small:
             out["small_image"] = small

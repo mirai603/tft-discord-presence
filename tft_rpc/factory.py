@@ -30,7 +30,7 @@ def make_reader(cfg):
         print("[!] Stage OCR disabled: install mss, pillow and pytesseract to enable it.")
         return None
     return StageReader(
-        region=ocr.get("region", [0.42, 0.0, 0.07, 0.04]),
+        region=ocr.get("region", [0.33, 0.002, 0.15, 0.03]),
         monitor=ocr.get("monitor", 1),
         tesseract_cmd=ocr.get("tesseract_cmd") or None,
         confirm_reads=ocr.get("confirm_reads", 2),
