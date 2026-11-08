@@ -131,56 +131,15 @@ class StageReader:
 
 
 # ---------------------------------------------------------------------------
-# Your HP, from the player list on the right. Your own row is the enlarged one
-# with a gold ring around the portrait (everyone else has red), and it moves up
-# and down as the list re-sorts by HP, so we find the ring and read the number
-# in the box just left of it. Measurements are from a 2560x1440 screenshot.
+# Your HP and placement, from the player list on the right. The list is a fixed
+# grid of 8 slots sorted by HP; your HP box is the only one with a gold arrow,
+# so the slot where the arrow is gives your placement, and the number in that
+# box is your HP. (The portrait rings are HP gauges that drain, so they aren't
+# used.) Measurements are from live matches, scaled to 1440p.
 # ---------------------------------------------------------------------------
 
 HP_STRIP = [0.89, 0.08, 0.11, 0.78]   # 16:9 fractions, pinned to the right edge
 REF_H = 1440
-
-
-def _is_gold(px):
-    r, g, b = px[:3]
-    return r > 175 and g > 140 and b < 125 and r - b > 85
-
-
-def find_ring(strip, scale):
-    """Centre (x, y) of your gold portrait ring in strip pixels, or None.
-
-    Finds a tall run of rows containing gold (small gaps allowed), takes its
-    TOP edge (the star badge can extend the bottom), and gets the horizontal
-    centre from the ring's top arc. The ring may be partly cut off by the
-    window's right edge, which is fine.
-    """
-    W, H = strip.size
-    px = strip.load()
-    x0 = int(W * 0.5)
-    gold_xs = [[x for x in range(x0, W) if _is_gold(px[x, y])] for y in range(H)]
-    has_gold = [len(xs) >= 2 for xs in gold_xs]
-    min_run, max_gap = max(10, int(55 * scale)), max(2, int(3 * scale))
-    best, start, gap = None, None, 0
-    for y, g in enumerate(has_gold + [False] * (max_gap + 1)):
-        if g:
-            if start is None:
-                start = y
-            gap = 0
-        elif start is not None:
-            gap += 1
-            if gap > max_gap:
-                end = y - gap + 1
-                if end - start >= min_run and (best is None or end - start > best[1] - best[0]):
-                    best = (start, end)
-                start, gap = None, 0
-    if not best:
-        return None
-    top = best[0]
-    arc = [x for y in range(top, min(H, top + max(2, int(4 * scale)))) for x in gold_xs[y]]
-    if not arc:
-        return None
-    cx = (min(arc) + max(arc)) / 2
-    return int(cx), top + int(48 * scale)
 
 
 def _ocr_digits(crop, scale, threshold=150):
@@ -197,19 +156,6 @@ def _ocr_digits(crop, scale, threshold=150):
             value = int(digits)
             return value if 0 <= value <= 150 else None
     return None
-
-
-def read_hp_from_strip(strip, scale, ring=None):
-    """OCR the HP number in the box just left of your gold ring. scale = height / 1440."""
-    ring = ring or find_ring(strip, scale)
-    if ring is None:
-        return None
-    cx, cy = ring
-    ring_left = cx - 48 * scale
-    box = (int(ring_left - 80 * scale), int(cy - 17 * scale), int(ring_left - 3 * scale), int(cy + 25 * scale))
-    if box[0] < 0 or box[1] < 0:
-        return None
-    return _ocr_digits(strip.crop(box), scale)
 
 
 def _is_digit_px(px):
@@ -242,35 +188,66 @@ def _runs(strip, x0, x1, scale, min_h, max_h, max_gap=2):
     return out
 
 
-# Live-match player list, measured from the game's right edge at 1440p.
-# Your HP box digits sit 129-180 px from the edge and are ~20 px tall; other
-# players' HP digits sit 93-124 px from the edge and are ~10-12 px tall.
+# Live-match player list, measured from the game's right edge at 1440p:
+# your HP box digits sit 129-180 px from the edge and are ~20 px tall.
 MY_DIGITS_X = (180, 129)
-OTHER_DIGITS_X = (124, 93)
 
 
-def find_board(strip, scale):
-    """Return (your_row_centre_y, [other rows' centre y]) in strip pixels.
+def _gold_arrow_score(strip, scale, cy):
+    """Gold pixels where your HP box's arrow/left border is (~178-200 px from the
+    right edge at 1440p). Other players' rows have names or background there."""
+    W, H = strip.size
+    px = strip.load()
+    x0, x1 = max(0, int(W - 200 * scale)), max(0, int(W - 178 * scale))
+    y0, y1 = max(0, int(cy - 14 * scale)), min(H, int(cy + 14 * scale))
+    n = 0
+    for y in range(y0, y1):
+        for x in range(x0, x1):
+            r, g, b = px[x, y][:3]
+            if r > 150 and g > 105 and b < 95 and r - b > 70:
+                n += 1
+    return n
 
-    Doesn't use the portrait rings: those are HP gauges that drain as players
-    lose HP. The HP numbers themselves are always there.
+
+# The player list is a fixed grid of 8 slots (knocked-out players stay in it).
+# Measured from live matches, in strip pixels at 1440p: first slot centre and
+# the distance between slots.
+SLOT_Y0 = 149.3
+SLOT_PITCH = 106.6
+SLOTS = 8
+
+
+def find_my_slot(strip, scale):
+    """Return (slot_index 0-7, your_row_centre_y, [score per slot]) or (None, None, scores).
+
+    Your HP box is the only one with a gold arrow on its left; the slot where it
+    shows up is your placement. Nothing here depends on the portrait rings (HP
+    gauges that drain) or on other text near the list.
     """
+    H = strip.size[1]
+    slots = [int((SLOT_Y0 + SLOT_PITCH * m) * scale) for m in range(SLOTS)]
+    scores = [_gold_arrow_score(strip, scale, y) if y < H else 0 for y in slots]
+    ranked = sorted(range(SLOTS), key=lambda m: scores[m], reverse=True)
+    best, second = ranked[0], scores[ranked[1]]
+    # The arrow is the only gold there, so the right slot clearly beats the rest.
+    if scores[best] < 3 or scores[best] < 2 * second + 2:
+        return None, None, scores
+    # Centre on your HP digits within the slot (rows can sit a few px off the grid).
     W = strip.size[0]
-    others = [(a + b) // 2 for a, b, _ in
-              _runs(strip, W - OTHER_DIGITS_X[0] * scale, W - OTHER_DIGITS_X[1] * scale, scale, 5, 16)]
-    mine = [(a, b, n) for a, b, n in
-            _runs(strip, W - MY_DIGITS_X[0] * scale, W - MY_DIGITS_X[1] * scale, scale, 13, 30)
-            # other players' names also reach into this column; drop anything on their rows
-            if all(abs((a + b) // 2 - o) > 14 * scale for o in others)]
-    if not mine:
-        return None, others
-    a, b, _ = max(mine, key=lambda r: r[2])
-    return (a + b) // 2, others
+    y = slots[best]
+    near = [(a, b, n) for a, b, n in
+            _runs(strip, W - MY_DIGITS_X[0] * scale, W - MY_DIGITS_X[1] * scale, scale, 8, 30)
+            if abs((a + b) // 2 - y) <= 25 * scale]
+    if near:
+        a, b, _ = max(near, key=lambda r: r[2])
+        y = (a + b) // 2
+    return best, y, scores
 
 
 def my_hp_box(strip, scale, my_cy):
     W = strip.size[0]
-    return (int(W - 184 * scale), int(my_cy - 17 * scale), int(W - 124 * scale), int(my_cy + 17 * scale))
+    # Left edge stays just right of the gold arrow (178-200 px) so it can't read as a "1".
+    return (int(W - 177 * scale), int(my_cy - 17 * scale), int(W - 124 * scale), int(my_cy + 17 * scale))
 
 
 def read_my_hp(strip, scale, my_cy):
@@ -278,37 +255,6 @@ def read_my_hp(strip, scale, my_cy):
     if box[0] < 0 or box[1] < 0:
         return None
     return _ocr_digits(strip.crop(box), scale)
-
-
-def list_rows(other_rows, my_cy, scale, kept=None):
-    """Keep only rows that sit on the player list's spacing, walking out from your row.
-
-    Other players' rows are ~107 px apart (1440p); the gap next to your enlarged
-    row is ~106-122 px. Anything off that rhythm (background sparkles, UI above
-    the list) is dropped. One missed row in between is tolerated.
-    Returns (rows_above, rows_below) as counts; if `kept` is a list, the y of each
-    accepted row is appended to it.
-    """
-    def walk(candidates):
-        count, last, first = 0, my_cy, True
-        for y in candidates:  # ordered moving away from your row
-            d = abs(y - last)
-            lo, hi = (98, 128) if first else (98, 116)
-            if lo * scale <= d <= hi * scale:
-                count, last, first = count + 1, y, False
-            elif count and 200 * scale <= d <= 226 * scale:  # one row missed
-                count, last = count + 2, y
-            elif d > hi * scale:
-                break
-            else:
-                continue
-            if kept is not None:
-                kept.append(y)
-        return count
-
-    above = sorted((y for y in other_rows if y < my_cy), reverse=True)
-    below = sorted(y for y in other_rows if y > my_cy)
-    return walk(above), walk(below)
 
 
 class _Smoothed:
@@ -365,17 +311,14 @@ class HealthReader(StageReader):
         strip, scale = self._grab_strip()
         if strip is None:
             return None, None
-        my_cy, others = find_board(strip, scale)
+        slot, my_cy, scores = find_my_slot(strip, scale)
         hp = place = box = None
-        kept = []
-        if my_cy is not None:
+        if slot is not None:
             box = my_hp_box(strip, scale, my_cy)
             hp = read_my_hp(strip, scale, my_cy)
-            if self.track_placement:
-                place = 1 + list_rows(others, my_cy, scale, kept)[0]
+            place = slot + 1 if self.track_placement else None
         if self.diagnostics:
-            self.diagnostics.save(strip, scale, box, my_cy, kept,
-                                  [y for y in others if y not in kept], hp, place)
+            self.diagnostics.save(strip, scale, box, scores, hp, place)
         return hp, place
 
     def read_once(self):

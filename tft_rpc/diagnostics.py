@@ -3,18 +3,18 @@ found, so misreads can be checked afterwards.
 
 Files go to diagnostics/hp/ in the project folder (git-ignored), named
   20261108-161406_hp-7_place-1.png
-Each image is the player-list strip with:
-  green box  = where your HP was read
-  cyan ticks = other players' rows that were counted
-  grey ticks = rows found but ignored (off the list's spacing)
-  top label  = the values read
+Each image has the raw player-list strip on the left (untouched, so it can be
+re-tested) and a marked-up copy on the right:
+  green box   = where your HP was read
+  slot ticks  = the 8 list slots with their gold-arrow score; green = chosen
+  top label   = the values read
 Only the newest `max_files` images are kept.
 """
 
 import os
 import time
 
-from PIL import ImageDraw
+from PIL import Image, ImageDraw
 
 
 class HPDiagnostics:
@@ -26,24 +26,31 @@ class HPDiagnostics:
         self._count = 0
         os.makedirs(folder, exist_ok=True)
 
-    def save(self, strip, scale, hp_box, my_cy, counted, ignored, hp, place):
+    def save(self, strip, scale, hp_box, slot_scores, hp, place):
         key = (hp, place)
         if self.mode == "changes" and key == self._last:
             return
         self._last = key
         try:
-            img = strip.convert("RGB")
-            d = ImageDraw.Draw(img)
-            W = img.size[0]
+            from .screen_reader import SLOT_PITCH, SLOT_Y0
+            raw = strip.convert("RGB")
+            marked = raw.copy()
+            d = ImageDraw.Draw(marked)
+            W, H = marked.size
             if hp_box:
                 d.rectangle(hp_box, outline=(0, 255, 0), width=2)
-            for y in counted:
-                d.line((W - int(124 * scale), y, W - int(93 * scale), y), fill=(0, 255, 255), width=2)
-            for y in ignored:
-                d.line((W - int(124 * scale), y, W - int(93 * scale), y), fill=(150, 150, 150), width=1)
+            for m, score in enumerate(slot_scores or []):
+                y = int((SLOT_Y0 + SLOT_PITCH * m) * scale)
+                chosen = place is not None and m == place - 1
+                colour = (0, 255, 0) if chosen else (160, 160, 160)
+                d.line((W - 12, y, W, y), fill=colour, width=2)
+                d.text((W - 30, y - 12), str(score), fill=colour)
             label = f"HP {hp if hp is not None else '?'}  place {place if place is not None else '?'}"
             d.rectangle((0, 0, W, 14), fill=(0, 0, 0))
             d.text((3, 1), label, fill=(255, 255, 255))
+            img = Image.new("RGB", (W * 2 + 6, H), (255, 0, 255))
+            img.paste(raw, (0, 0))
+            img.paste(marked, (W + 6, 0))
             stamp = time.strftime("%Y%m%d-%H%M%S")
             name = f"{stamp}_hp-{hp if hp is not None else 'none'}_place-{place if place is not None else 'none'}.png"
             path = os.path.join(self.folder, name)
