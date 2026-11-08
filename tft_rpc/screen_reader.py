@@ -268,21 +268,26 @@ def find_board(strip, scale):
     return (a + b) // 2, others
 
 
-def read_my_hp(strip, scale, my_cy):
+def my_hp_box(strip, scale, my_cy):
     W = strip.size[0]
-    box = (int(W - 184 * scale), int(my_cy - 17 * scale), int(W - 124 * scale), int(my_cy + 17 * scale))
+    return (int(W - 184 * scale), int(my_cy - 17 * scale), int(W - 124 * scale), int(my_cy + 17 * scale))
+
+
+def read_my_hp(strip, scale, my_cy):
+    box = my_hp_box(strip, scale, my_cy)
     if box[0] < 0 or box[1] < 0:
         return None
     return _ocr_digits(strip.crop(box), scale)
 
 
-def list_rows(other_rows, my_cy, scale):
+def list_rows(other_rows, my_cy, scale, kept=None):
     """Keep only rows that sit on the player list's spacing, walking out from your row.
 
     Other players' rows are ~107 px apart (1440p); the gap next to your enlarged
     row is ~106-122 px. Anything off that rhythm (background sparkles, UI above
     the list) is dropped. One missed row in between is tolerated.
-    Returns (rows_above, rows_below) as counts.
+    Returns (rows_above, rows_below) as counts; if `kept` is a list, the y of each
+    accepted row is appended to it.
     """
     def walk(candidates):
         count, last, first = 0, my_cy, True
@@ -295,6 +300,10 @@ def list_rows(other_rows, my_cy, scale):
                 count, last = count + 2, y
             elif d > hi * scale:
                 break
+            else:
+                continue
+            if kept is not None:
+                kept.append(y)
         return count
 
     above = sorted((y for y in other_rows if y < my_cy), reverse=True)
@@ -326,13 +335,14 @@ class _Smoothed:
 class HealthReader(StageReader):
     """Reads your HP and placement from the player list (same window handling)."""
 
-    def __init__(self, track_placement=True, **kwargs):
+    def __init__(self, track_placement=True, diagnostics=None, **kwargs):
         kwargs.setdefault("region", HP_STRIP)
         super().__init__(**kwargs)
         self.anchor = "right"
         self.track_placement = track_placement
         self._hp = _Smoothed(self.confirm_reads)
         self._place = _Smoothed(self.confirm_reads)
+        self.diagnostics = diagnostics  # HPDiagnostics or None
 
     @property
     def hp(self):
@@ -356,10 +366,16 @@ class HealthReader(StageReader):
         if strip is None:
             return None, None
         my_cy, others = find_board(strip, scale)
-        if my_cy is None:
-            return None, None
-        hp = read_my_hp(strip, scale, my_cy)
-        place = 1 + list_rows(others, my_cy, scale)[0] if self.track_placement else None
+        hp = place = box = None
+        kept = []
+        if my_cy is not None:
+            box = my_hp_box(strip, scale, my_cy)
+            hp = read_my_hp(strip, scale, my_cy)
+            if self.track_placement:
+                place = 1 + list_rows(others, my_cy, scale, kept)[0]
+        if self.diagnostics:
+            self.diagnostics.save(strip, scale, box, my_cy, kept,
+                                  [y for y in others if y not in kept], hp, place)
         return hp, place
 
     def read_once(self):

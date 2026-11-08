@@ -61,7 +61,15 @@ def make_hp_reader(cfg):
     ocr = cfg.get("stage_ocr", {})
     if not cfg.get("hp_ocr", {}).get("enabled", True) or not OCR_AVAILABLE:
         return None
+    diag_cfg = cfg.get("diagnostics", {})
+    diagnostics = None
+    if diag_cfg.get("hp_screenshots", False):
+        from .diagnostics import HPDiagnostics
+        diagnostics = HPDiagnostics(os.path.join(HERE, "diagnostics", "hp"),
+                                    max_files=diag_cfg.get("max_files", 1000),
+                                    mode=diag_cfg.get("mode", "all"))
     return HealthReader(
+        diagnostics=diagnostics,
         monitor=ocr.get("monitor", 1),
         tesseract_cmd=ocr.get("tesseract_cmd") or None,
         confirm_reads=ocr.get("confirm_reads", 2),

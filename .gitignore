@@ -8,6 +8,7 @@ __pycache__/
 *.pyc
 
 # Runtime output
+diagnostics/
 tft_rpc.log
 tft_rpc.log.old
 
