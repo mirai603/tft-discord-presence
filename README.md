@@ -6,11 +6,12 @@ standalone TFT client (Patch 18.6+, Nov 2026):
 ```
 Playing Teamfight Tactics
 Ranked · Stage 3-5
-62 HP                         12:34 elapsed
+62 HP · 4th                   12:34 elapsed
 ```
 
 Outside a match it shows **In Main Menu**, **In Lobby · Double Up (2 of 8)**,
-**In Queue** with a queue timer, **Match Found**, and **Finished 3rd** after a game.
+**In Queue** with a queue timer, **Match Found**, **Loading In**, and **Finished 3rd**
+after a game. In Double Up, HP and placement are your team's (**Team 2nd**).
 It runs in the system tray and can start with Windows.
 
 ## How it works
@@ -22,9 +23,8 @@ in-game API is gone), so the data comes from three places:
 | --- | --- |
 | Menu / lobby / queue / match found / in game / game over, queue type, party size, placement | TFT's own log file (`%LOCALAPPDATA%\TFT\Saved\Logs\TFT.log`) and end-of-game stats file |
 | Stage number fallback (from carousel rounds) | TFT's log |
-| Exact stage (e.g. `3-5`) and your HP | OCR on the TFT window (Tesseract) |
-| Your account id (to find you in the end-of-game stats), Riot ID and region | Riot Client local API |
-| Rank and LP (optional) | Riot's official API ([tft-league-v1](https://developer.riotgames.com/apis#tft-league-v1)), needs your own API key |
+| Exact stage (e.g. `3-5`), your HP and current placement | OCR on the TFT window (Tesseract) |
+| Your account id (to find you in the end-of-game stats) | Riot Client local API |
 
 HP is found by locating the gold arrow that marks your row in the player list on
 the right and reading the HP box next to it, so it works wherever your row is.
@@ -65,7 +65,7 @@ In Discord, turn on *Settings → Activity Privacy → Share your detected activ
 | `python -m tft_rpc` | Run in the terminal (Ctrl+C to stop) |
 | `python -m tft_rpc tray` | Run in the system tray |
 | `python -m tft_rpc install-startup` / `uninstall-startup` | Start with Windows on/off |
-| `python -m tft_rpc calibrate` | During a match: saves `calibrate_full.png` and prints the stage and HP it reads |
+| `python -m tft_rpc calibrate` | During a match: saves `calibrate_full.png` (red box = stage region) and `calibrate_crop.png` (what OCR sees), and prints the stage, HP and placement it reads |
 | `python -m tft_rpc dump` | Print what each data source currently reports |
 | `python -m tft_rpc read-hp <image or folder>` | Run the HP/placement reader on saved screenshots (diagnostic images or full TFT screenshots) and print what it reads. Add `--mode normal` or `--mode double-up` to force a mode, `--save` to write a marked copy |
 
@@ -84,15 +84,13 @@ In Discord, turn on *Settings → Activity Privacy → Share your detected activ
   only saved when the HP or placement read changes. Off by default;
   toggle it any time from the tray menu (**Save HP screenshots**). Only the newest
   `max_files` (default 1000, ~210 KB each) are kept.
-- `riot_api_key`: optional, for rank/LP. Development keys expire every 24 hours;
-  a personal key can be requested on the Riot Developer Portal.
 
 ## Limitations
 
 - Relies on TFT's log wording and UI layout, which can change between patches.
 - HP/stage reading needs TFT visible and focused; values update every few seconds
   and Discord accepts an update at most every 15 seconds.
-- Windows only.
+- Windows only. (TFT has no macOS support currently anyway)
 
 ---
 

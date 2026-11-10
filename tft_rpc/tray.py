@@ -5,7 +5,8 @@ to the clock showing what it's doing.
 
 Icon colours: green = showing your TFT status, grey = waiting for TFT,
 yellow = waiting for Discord, grey with bars = paused.
-Right-click for: Pause, Start with Windows, Reload settings, Open log, Quit.
+Right-click for: Pause, Start with Windows, Save HP screenshots, Reload settings,
+Open log, Open screenshots folder, Open folder, Quit.
 """
 
 import os
