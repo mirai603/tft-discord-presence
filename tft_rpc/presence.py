@@ -70,7 +70,8 @@ def build(cfg, session, game, stage, rank, game_started_at):
         if game["health"] is not None and show.get("health", True):
             state_parts.append(f"{game['health']} HP")
         if game.get("placement") and show.get("placement", True):
-            state_parts.append(ordinal(game["placement"]))
+            team = (session or {}).get("queue_id") == 1160
+            state_parts.append(("Team " if team else "") + ordinal(game["placement"]))
         if game["level"] is not None and show.get("level", True):
             state_parts.append(f"Lvl {game['level']}")
         if game["gold"] is not None and show.get("gold", False):

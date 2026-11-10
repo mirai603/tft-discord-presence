@@ -66,6 +66,7 @@ In Discord, turn on *Settings → Activity Privacy → Share your detected activ
 | `python -m tft_rpc install-startup` / `uninstall-startup` | Start with Windows on/off |
 | `python -m tft_rpc calibrate` | During a match: saves `calibrate_full.png` and prints the stage and HP it reads |
 | `python -m tft_rpc dump` | Print what each data source currently reports |
+| `python -m tft_rpc read-hp <image or folder>` | Run the HP/placement reader on saved screenshots (diagnostic images or full TFT screenshots) and print what it reads. Add `--mode normal` or `--mode double-up` to force a mode, `--save` to write a marked copy |
 | `python -m tft_rpc probe` / `explore` | Developer tools: inspect the Riot Client's local API (read-only; outputs are git-ignored because they can contain account details) |
 
 ## Configuration

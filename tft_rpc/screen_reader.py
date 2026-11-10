@@ -14,13 +14,19 @@ from .tft_window import TFTWindow, region_box
 
 STAGE_RE = re.compile(r"([1-9])\s*[-–—]\s*([1-7])")
 
+# Image reading (PIL + pytesseract) and screen capture (mss) are imported
+# separately so saved screenshots can be checked even without mss.
 try:
-    import mss
     from PIL import Image, ImageFilter, ImageOps
     import pytesseract
-    AVAILABLE = True
+    OCR_LIBS = True
 except ImportError:
-    AVAILABLE = False
+    OCR_LIBS = False
+try:
+    import mss
+except ImportError:
+    mss = None
+AVAILABLE = OCR_LIBS and mss is not None
 
 
 class StageReader:
@@ -244,6 +250,107 @@ def find_my_slot(strip, scale):
     return best, y, scores
 
 
+# --- Double Up -------------------------------------------------------------
+# 4 teams of 2. Each team shares one HP box between its two portraits. The
+# list is a fixed grid, except that your team's slot is taller: your two names
+# sit a bit further apart and every team below yours is pushed down. So there
+# are only 4 possible layouts (one per team being yours). Player names are
+# always shown (greyed out once a player is knocked out), so we find the name
+# rows and pick the layout they match; that gives your team, i.e. your team's
+# placement, and where your team's HP box is.
+# Portrait rings, team brackets and HP digits aren't used to find your team:
+# rings and brackets are HP gauges that drain, and knocked-out players' grey
+# portraits look like digits. Measured from live matches, scaled to 1440p.
+DU_TEAMS = 4
+DU_TEAM_PITCH = 198.2           # distance between teams
+DU_NAME_ROWS = (177.0, 276.1)   # a team's two name rows (first team), strip px
+DU_MY_NAME_SHIFT = (9.2, 26.4)  # your team's names sit this much lower (top, bottom)
+DU_BELOW_SHIFT = 34.3           # teams below yours are pushed down this far
+DU_BOX_Y0 = 227.2               # first team's HP box centre
+DU_MY_BOX_SHIFT = 17.2          # your box sits this much below its grid spot
+DU_NAMES_X = (281, 143)         # name column, from the right edge
+
+
+def _is_name_px(c):
+    r, g, b = c[:3]
+    white = min(r, g, b) > 150 and max(r, g, b) - min(r, g, b) < 60
+    gold = r > 170 and g > 130 and b < 120 and r - b > 70   # your own name is gold
+    return white or gold
+
+
+def find_name_rows(strip, scale):
+    W, H = strip.size
+    px = strip.load()
+    x0, x1 = max(0, int(W - DU_NAMES_X[0] * scale)), max(1, int(W - DU_NAMES_X[1] * scale))
+    prof = [sum(1 for x in range(x0, x1) if _is_name_px(px[x, y])) for y in range(H)]
+    rows, start = [], None
+    for y, c in enumerate(prof + [0] * 4):
+        if c >= 2 and start is None:
+            start = y
+        elif c < 2 and start is not None:
+            h = y - start
+            if 8 * scale <= h <= 29 * scale and sum(prof[start:y]) >= 44 * scale * scale:
+                rows.append((start + y) / 2)
+            start = None
+    return rows
+
+
+def predicted_name_rows(my_team, scale):
+    out = []
+    for k in range(DU_TEAMS):
+        top, bottom = (r + DU_TEAM_PITCH * k for r in DU_NAME_ROWS)
+        if k == my_team:
+            top, bottom = top + DU_MY_NAME_SHIFT[0], bottom + DU_MY_NAME_SHIFT[1]
+        elif k > my_team:
+            top, bottom = top + DU_BELOW_SHIFT, bottom + DU_BELOW_SHIFT
+        out += [top * scale, bottom * scale]
+    return out
+
+
+def find_my_team(strip, scale):
+    """Return (team_index 0-3, your_box_centre_y, [name rows matched per layout])
+    or (None, None, matches)."""
+    rows = find_name_rows(strip, scale)
+    tol = 5.3 * scale + 0.6
+    matches = [sum(1 for p in predicted_name_rows(m, scale) if any(abs(p - r) <= tol for r in rows))
+               for m in range(DU_TEAMS)]
+    ranked = sorted(range(DU_TEAMS), key=lambda m: matches[m], reverse=True)
+    best = ranked[0]
+    if matches[best] < 3 or matches[best] <= matches[ranked[1]]:
+        return None, None, matches
+    box_y = int((DU_BOX_Y0 + DU_TEAM_PITCH * best + DU_MY_BOX_SHIFT) * scale)
+    return best, box_y, matches
+
+
+def read_team_hp(strip, scale, cy):
+    """OCR your team's HP. The box shifts sideways with the number's width, so the
+    crop is cut just before the team emblem's coloured ring wherever it starts."""
+    W = strip.size[0]
+    # Centre on the digits first: the predicted position can be a few px off.
+    px0 = strip.load()
+    x0, x1 = int(W - 140 * scale), int(W - 75 * scale)
+    def digits_at(y):
+        a = int(9 * scale)
+        return sum(1 for yy in range(max(0, y - a), min(strip.size[1], y + a + 1))
+                   for x in range(x0, x1) if _is_digit_px(px0[x, yy]))
+    cy = max(range(int(cy - 6 * scale), int(cy + 6 * scale) + 1), key=digits_at)
+    box = [int(W - 145 * scale), int(cy - 13 * scale), int(W - 66 * scale), int(cy + 13 * scale)]
+    crop = strip.crop(tuple(box))
+    px = crop.load()
+    cw, ch = crop.size
+    for x in range(int(cw * 0.35), cw):
+        coloured = 0
+        for y in range(ch):
+            r, g, b = px[x, y][:3]
+            if max(r, g, b) > 110 and max(r, g, b) - min(r, g, b) > 80:
+                coloured += 1
+        if coloured >= max(3, ch // 6):
+            box[2] = box[0] + max(1, x - int(2 * scale))
+            break
+    box = tuple(box)
+    return box, _ocr_digits(strip.crop(box), scale)
+
+
 def my_hp_box(strip, scale, my_cy):
     W = strip.size[0]
     # Left edge stays just right of the gold arrow (178-200 px) so it can't read as a "1".
@@ -289,6 +396,7 @@ class HealthReader(StageReader):
         self._hp = _Smoothed(self.confirm_reads)
         self._place = _Smoothed(self.confirm_reads)
         self.diagnostics = diagnostics  # HPDiagnostics or None
+        self.double_up = False  # set by the runner from the queue (1160)
 
     @property
     def hp(self):
@@ -307,18 +415,27 @@ class HealthReader(StageReader):
             return Image.frombytes("RGB", shot.size, shot.rgb), area["height"] / REF_H
 
     def read_board(self):
-        """Return (my_hp, placement) from one screenshot."""
+        """Return (my_hp, placement) from one screenshot. In Double Up these are
+        your team's HP and your team's placement (1-4)."""
         strip, scale = self._grab_strip()
         if strip is None:
             return None, None
-        slot, my_cy, scores = find_my_slot(strip, scale)
         hp = place = box = None
-        if slot is not None:
-            box = my_hp_box(strip, scale, my_cy)
-            hp = read_my_hp(strip, scale, my_cy)
-            place = slot + 1 if self.track_placement else None
+        if self.double_up:
+            team, cy, scores = find_my_team(strip, scale)
+            if team is not None:
+                box, hp = read_team_hp(strip, scale, cy)
+                # Only trust the layout if your team's HP box is really there.
+                if hp is not None:
+                    place = team + 1 if self.track_placement else None
+        else:
+            slot, my_cy, scores = find_my_slot(strip, scale)
+            if slot is not None:
+                box = my_hp_box(strip, scale, my_cy)
+                hp = read_my_hp(strip, scale, my_cy)
+                place = slot + 1 if self.track_placement else None
         if self.diagnostics:
-            self.diagnostics.save(strip, scale, box, scores, hp, place)
+            self.diagnostics.save(strip, scale, box, scores, hp, place, self.double_up)
         return hp, place
 
     def read_once(self):

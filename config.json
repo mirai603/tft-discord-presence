@@ -1,0 +1,42 @@
+{
+  "discord_client_id": "1568688748382654574",
+  "poll_seconds": 3,
+  "min_update_seconds": 15,
+
+  "show": {
+    "stage": true,
+    "health": true,
+    "level": true,
+    "gold": false,
+    "players_left": true,
+    "rank": true,
+    "lobby": true
+  },
+
+  "assets": {
+    "large_image": "images",
+    "small_image": "",
+    "queue_icons": {
+      "Ranked": "ranked",
+      "Normal": "normal",
+      "Hyper Roll": "hyper_roll",
+      "Double Up": "double_up"
+    }
+  },
+
+  "stage_ocr": {
+    "enabled": true,
+    "monitor": 1,
+    "region": [0.33, 0.002, 0.15, 0.03],
+    "confirm_reads": 2,
+    "capture": "window",
+    "only_when_focused": true,
+    "tesseract_cmd": "C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
+  },
+
+  "diagnostics": {
+    "hp_screenshots": false,
+    "mode": "all",
+    "max_files": 1000
+  }
+}

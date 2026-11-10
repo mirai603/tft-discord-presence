@@ -3,6 +3,8 @@
     python -m tft_rpc            run the rich presence
     python -m tft_rpc dump       print what Riot's local APIs return right now
     python -m tft_rpc calibrate  save screenshots to tune the stage OCR region
+    python -m tft_rpc read-hp <image|folder> [--mode auto|normal|double-up] [--save]
+                                 run the HP/placement reader on saved screenshots
     python -m tft_rpc tray       run in the background with a system-tray icon
     python -m tft_rpc install-startup / uninstall-startup
                                  start (or stop starting) the tray app when you log in
@@ -86,6 +88,9 @@ def main():
     if cmd == "probe":
         from . import probe
         return probe.run(HERE)
+    if cmd == "read-hp":
+        from . import hp_check
+        return hp_check.main(sys.argv[2:])
     if cmd == "explore":
         from . import explore
         return explore.run(HERE)

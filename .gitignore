@@ -1,6 +1,3 @@
-# Personal settings: Discord app id, Riot API key
-config.json
-
 # Python
 .venv/
 venv/

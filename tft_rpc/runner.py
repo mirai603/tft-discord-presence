@@ -130,6 +130,8 @@ class PresenceRunner:
                     log_stage = (session or {}).get("stage_number")
                     if stage and log_stage and int(stage.split("-")[0]) != log_stage:
                         stage = None  # OCR disagrees with the log; fall back to "Stage N"
+                    if hp_reader:
+                        hp_reader.double_up = (session or {}).get("queue_id") == 1160
                     hp = hp_reader.update() if hp_reader else None
                     place = hp_reader.placement if hp_reader else None
                     if hp is not None or place is not None:

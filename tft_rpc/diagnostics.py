@@ -28,7 +28,7 @@ class HPDiagnostics:
         self._count = 0
         self.enabled = enabled
 
-    def save(self, strip, scale, hp_box, slot_scores, hp, place):
+    def save(self, strip, scale, hp_box, slot_scores, hp, place, double_up=False):
         if not self.enabled:
             return
         key = (hp, place)
@@ -36,7 +36,9 @@ class HPDiagnostics:
             return
         self._last = key
         try:
-            from .screen_reader import SLOT_PITCH, SLOT_Y0
+            from .screen_reader import DU_BOX_Y0, DU_TEAM_PITCH, SLOT_PITCH, SLOT_Y0
+            y0, pitch = (DU_BOX_Y0, DU_TEAM_PITCH) if double_up else (SLOT_Y0, SLOT_PITCH)
+            # (in Double Up the number per tick is how many name rows matched that layout)
             raw = strip.convert("RGB")
             marked = raw.copy()
             d = ImageDraw.Draw(marked)
@@ -44,12 +46,14 @@ class HPDiagnostics:
             if hp_box:
                 d.rectangle(hp_box, outline=(0, 255, 0), width=2)
             for m, score in enumerate(slot_scores or []):
-                y = int((SLOT_Y0 + SLOT_PITCH * m) * scale)
+                y = int((y0 + pitch * m) * scale)
                 chosen = place is not None and m == place - 1
                 colour = (0, 255, 0) if chosen else (160, 160, 160)
                 d.line((W - 12, y, W, y), fill=colour, width=2)
                 d.text((W - 30, y - 12), str(score), fill=colour)
             label = f"HP {hp if hp is not None else '?'}  place {place if place is not None else '?'}"
+            if double_up:
+                label += "  (Double Up: team)"
             d.rectangle((0, 0, W, 14), fill=(0, 0, 0))
             d.text((3, 1), label, fill=(255, 255, 255))
             img = Image.new("RGB", (W * 2 + 6, H), (255, 0, 255))
@@ -57,7 +61,7 @@ class HPDiagnostics:
             img.paste(marked, (W + 6, 0))
             os.makedirs(self.folder, exist_ok=True)
             stamp = time.strftime("%Y%m%d-%H%M%S")
-            name = f"{stamp}_hp-{hp if hp is not None else 'none'}_place-{place if place is not None else 'none'}.png"
+            name = f"{stamp}_{'du_' if double_up else ''}hp-{hp if hp is not None else 'none'}_place-{place if place is not None else 'none'}.png"
             path = os.path.join(self.folder, name)
             if os.path.exists(path):  # two reads in the same second
                 path = path[:-4] + f"_{int(time.time() * 1000) % 1000:03d}.png"
