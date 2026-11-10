@@ -62,7 +62,6 @@ def make_hp_reader(cfg):
     from .diagnostics import HPDiagnostics
     diagnostics = HPDiagnostics(DIAG_DIR,
                                 max_files=diag_cfg.get("max_files", 1000),
-                                mode=diag_cfg.get("mode", "all"),
                                 enabled=bool(diag_cfg.get("hp_screenshots", False)))
     return HealthReader(
         diagnostics=diagnostics,

@@ -42,7 +42,6 @@
 
   "diagnostics": {
     "hp_screenshots": false,
-    "mode": "all",
     "max_files": 1000
   }
 }

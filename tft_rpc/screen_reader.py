@@ -453,3 +453,5 @@ class HealthReader(StageReader):
         super().reset()
         self._hp.reset()
         self._place.reset()
+        if self.diagnostics:
+            self.diagnostics.reset()

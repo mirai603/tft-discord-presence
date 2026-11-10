@@ -8,6 +8,8 @@ re-tested) and a marked-up copy on the right:
   green box   = where your HP was read
   slot ticks  = the 8 list slots with their gold-arrow score; green = chosen
   top label   = the values read
+A screenshot is only saved when the HP or placement read differs from the
+previous read (including a failed read), so misreads stand out.
 Only the newest `max_files` images are kept. Saving is off until `enabled` is
 set (the tray's "Save HP screenshots" item, or diagnostics.hp_screenshots in
 config.json).
@@ -20,19 +22,18 @@ from PIL import Image, ImageDraw
 
 
 class HPDiagnostics:
-    def __init__(self, folder, max_files=1000, mode="all", enabled=False):
+    def __init__(self, folder, max_files=1000, enabled=False):
         self.folder = folder
         self.max_files = max(10, int(max_files))
-        self.mode = mode  # "all" = every read, "changes" = only when the reading changes
-        self._last = None
+        self._last = None  # (hp, place) of the last read; only changes get saved
         self._count = 0
         self.enabled = enabled
 
     def save(self, strip, scale, hp_box, slot_scores, hp, place, double_up=False):
         if not self.enabled:
             return
-        key = (hp, place)
-        if self.mode == "changes" and key == self._last:
+        key = (hp, place, double_up)
+        if key == self._last:
             return
         self._last = key
         try:
@@ -71,6 +72,10 @@ class HPDiagnostics:
                 self._prune()
         except Exception:
             pass  # diagnostics must never break the presence
+
+    def reset(self):
+        """Forget the last read, so the first read of the next game is saved."""
+        self._last = None
 
     def _prune(self):
         files = sorted(f for f in os.listdir(self.folder) if f.endswith(".png"))
