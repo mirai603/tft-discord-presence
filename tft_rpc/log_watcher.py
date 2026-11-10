@@ -189,15 +189,13 @@ class LogWatcher:
             return ordinal((standing + 1) // 2)  # team placement
         return ordinal(standing)
 
-    def session(self, my_puuid=None, tft_running=True):
-        """Same shape as RiotClient.session(), or None if TFT isn't open."""
-        if not tft_running or not self.poll():
+    def session(self, my_puuid=None):
+        """What you're doing in TFT right now, or None if there's no log yet."""
+        if not self.poll():
             return None
         out = {
             "phase": self.phase,
             "queue_id": self.queue_id,
-            "is_tft": True,
-            "progress": None,
             "since": self.phase_since,
             "game_started_at": self.game_started_at,
             "stage_number": self.stage_number(),

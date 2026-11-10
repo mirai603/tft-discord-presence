@@ -40,22 +40,18 @@ def make_reader(cfg):
     )
 
 
-def tft_process_running(rc):
-    try:
-        import psutil
-        return any((p.info["name"] or "").lower().startswith("tftclient")
-                   for p in psutil.process_iter(["name"]))
-    except ImportError:
-        return rc.tft_running()
+def tft_process_running():
+    import psutil
+    return any((p.info["name"] or "").lower().startswith("tftclient")
+               for p in psutil.process_iter(["name"]))
 
 
-def get_session(rc, lcu, logw=None):
-    """TFT's own log first, then the Riot Client presence, then the old League client."""
-    if logw is not None and tft_process_running(rc):
-        s = logw.session(rc._my_puuid())
-        if s:
-            return s
-    return rc.session() or lcu.session()
+def get_session(rc, logw):
+    """What TFT's log says you're doing, or None when TFT isn't open.
+    The Riot Client is only asked for your account id (to find your end-of-game placement)."""
+    if not tft_process_running():
+        return None
+    return logw.session(rc.my_puuid())
 
 
 def make_hp_reader(cfg):

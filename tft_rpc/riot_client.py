@@ -1,6 +1,6 @@
-"""Gets TFT status from the Riot Client's local API (the standalone TFT client,
-Nov 2026+). Your own TFT chat presence tells us the queue and whether you're
-in a match; this is the same data your friends list shows."""
+"""Reads your own account details from the Riot Client's local API (via its
+lockfile): your account id (to pick you out of the end-of-game stats) and your
+Riot ID and region (only needed for the optional rank/LP lookup)."""
 
 import base64
 import json
@@ -75,7 +75,7 @@ class RiotClient:
 
     def platform(self):
         """Your platform id, e.g. 'NA1', from your own TFT presence."""
-        puuid = self._my_puuid()
+        puuid = self.my_puuid()
         for p in (self._get("/chat/v4/presences") or {}).get("presences", []):
             if p.get("puuid") == puuid:
                 region = _b64json(p.get("packedData")).get("region")
@@ -83,48 +83,8 @@ class RiotClient:
                     return region.upper()
         return None
 
-    def _my_puuid(self):
+    def my_puuid(self):
         if not self._puuid:
             s = self._get("/chat/v1/session") or {}
             self._puuid = s.get("puuid")
         return self._puuid
-
-    def tft_running(self):
-        sessions = self._get("/product-session/v1/external-sessions") or {}
-        return any(v.get("productId") == "teamfighttactics" for v in sessions.values()
-                   if isinstance(v, dict))
-
-    def session(self):
-        """Return {'phase','queue_id','queue_name','is_tft','progress'} or None.
-
-        phase is 'Lobby' when TFT is open but you're not in a match, and
-        'InProgress' during a match.
-        """
-        puuid = self._my_puuid()
-        pres = self._get("/chat/v4/presences") or {}
-        mine = None
-        for p in pres.get("presences", []):
-            if p.get("product") == "teamfighttactics" and (not puuid or p.get("puuid") == puuid):
-                mine = p
-                break
-        if not mine:
-            return {"phase": "Lobby", "queue_id": None, "queue_name": None, "is_tft": True,
-                    "progress": None} if self.tft_running() else None
-
-        activity = _b64json(mine.get("packedData")).get("activity") or {}
-        mode = str(activity.get("mode", ""))
-        qid = None
-        if "queueId_" in mode:
-            try:
-                qid = int(mode.rsplit("queueId_", 1)[1])
-            except ValueError:
-                pass
-        progress = (activity.get("progress") or {}).get("value")
-        in_game = bool(progress) and progress != "NotInGame"
-        return {
-            "phase": "InProgress" if in_game else "Lobby",
-            "queue_id": qid,
-            "queue_name": QUEUES.get(qid),
-            "is_tft": True,
-            "progress": progress if in_game else None,
-        }

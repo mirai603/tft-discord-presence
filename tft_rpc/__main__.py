@@ -1,7 +1,7 @@
 """Entry point.
 
     python -m tft_rpc            run the rich presence
-    python -m tft_rpc dump       print what Riot's local APIs return right now
+    python -m tft_rpc dump       print what each data source reports right now
     python -m tft_rpc calibrate  save screenshots to tune the stage OCR region
     python -m tft_rpc read-hp <image|folder> [--mode auto|normal|double-up] [--save]
                                  run the HP/placement reader on saved screenshots
@@ -11,31 +11,18 @@
 """
 
 import json
-import os
 import sys
-import time
 
-from . import live_client
-from .factory import (HERE, get_session, load_config, make_hp_reader, make_ranked,
-                      make_reader, tft_process_running)
-from .lcu import LCU
+from .factory import load_config, make_hp_reader, make_ranked, make_reader, tft_process_running
 from .log_watcher import LogWatcher
 from .riot_client import RiotClient
 
 def cmd_dump(cfg):
     rc = RiotClient()
     print("== TFT log session ==")
-    logw = LogWatcher()
-    print(json.dumps(logw.session(rc._my_puuid(), tft_process_running(rc)), indent=2))
-    print("== Riot Client TFT session ==")
-    print(json.dumps(rc.session(), indent=2))
-    lcu = LCU(cfg.get("lockfile_path") or None)
-    print("== LCU session ==")
-    session = lcu.session()
-    print(json.dumps(session, indent=2))
-    if not session:
-        print("-- client diagnosis --")
-        print(lcu.diagnose())
+    running = tft_process_running()
+    print("TFT running:", running)
+    print(json.dumps(LogWatcher().session(rc.my_puuid()) if running else None, indent=2))
     print("== TFT rank (Riot API) ==")
     ranked = make_ranked(cfg, rc)
     if ranked:
@@ -44,15 +31,15 @@ def cmd_dump(cfg):
         print(ranked.text(1100), "| Double Up:", ranked.text(1160))
     else:
         print("No riot_api_key in config.json")
-    raw = live_client.get_all_game_data()
-    print("== Live Client allgamedata (raw) ==")
-    print(json.dumps(raw, indent=2)[:6000] if raw else "No game running on port 2999.")
-    print("== Parsed ==")
-    print(json.dumps(live_client.parse(raw), indent=2))
     reader = make_reader(cfg)
     if reader:
         print("== Stage OCR (single read) ==")
         print(reader.read_once())
+    hp_reader = make_hp_reader(cfg)
+    if hp_reader:
+        hp_reader.only_when_focused = False
+        print("== HP / placement (single read) ==")
+        print(hp_reader.read_board())
 
 
 def cmd_calibrate(cfg):
@@ -85,15 +72,9 @@ def cmd_run(cfg):
 def main():
     cfg = load_config()
     cmd = sys.argv[1] if len(sys.argv) > 1 else "run"
-    if cmd == "probe":
-        from . import probe
-        return probe.run(HERE)
     if cmd == "read-hp":
         from . import hp_check
         return hp_check.main(sys.argv[2:])
-    if cmd == "explore":
-        from . import explore
-        return explore.run(HERE)
     if cmd == "tray":
         from . import tray
         return tray.main()

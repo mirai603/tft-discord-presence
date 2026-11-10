@@ -3,7 +3,6 @@
   "riot_api_key": "",
   "riot_id": "",
   "riot_platform": "",
-  "lockfile_path": "",
   "poll_seconds": 3,
   "min_update_seconds": 15,
 
@@ -11,9 +10,6 @@
     "stage": true,
     "health": true,
     "placement": true,
-    "level": true,
-    "gold": false,
-    "players_left": true,
     "rank": true,
     "lobby": true,
     "party": true

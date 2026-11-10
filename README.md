@@ -23,11 +23,12 @@ in-game API is gone), so the data comes from three places:
 | Menu / lobby / queue / match found / in game / game over, queue type, party size, placement | TFT's own log file (`%LOCALAPPDATA%\TFT\Saved\Logs\TFT.log`) and end-of-game stats file |
 | Stage number fallback (from carousel rounds) | TFT's log |
 | Exact stage (e.g. `3-5`) and your HP | OCR on the TFT window (Tesseract) |
-| TFT running / in game (fallback), Riot ID, region | Riot Client local API |
+| Your account id (to find you in the end-of-game stats), Riot ID and region | Riot Client local API |
 | Rank and LP (optional) | Riot's official API ([tft-league-v1](https://developer.riotgames.com/apis#tft-league-v1)), needs your own API key |
 
-HP is found by locating your gold portrait ring in the player list on the right
-and reading the HP box next to it, so it works wherever your row is.
+HP is found by locating the gold arrow that marks your row in the player list on
+the right and reading the HP box next to it, so it works wherever your row is.
+In Double Up it finds your team's box and reads the shared team HP.
 
 It only shows **your own** information, after the fact, to people viewing your
 profile. It doesn't track opponents or give in-game advice, in line with
@@ -67,13 +68,12 @@ In Discord, turn on *Settings → Activity Privacy → Share your detected activ
 | `python -m tft_rpc calibrate` | During a match: saves `calibrate_full.png` and prints the stage and HP it reads |
 | `python -m tft_rpc dump` | Print what each data source currently reports |
 | `python -m tft_rpc read-hp <image or folder>` | Run the HP/placement reader on saved screenshots (diagnostic images or full TFT screenshots) and print what it reads. Add `--mode normal` or `--mode double-up` to force a mode, `--save` to write a marked copy |
-| `python -m tft_rpc probe` / `explore` | Developer tools: inspect the Riot Client's local API (read-only; outputs are git-ignored because they can contain account details) |
 
 ## Configuration
 
 `config.json` (git-ignored, created from `config.example.json`):
 
-- `show.*`: turn individual fields on/off (`gold` is off by default).
+- `show.*`: turn individual fields on/off (stage, health, placement, rank, lobby, party).
 - `stage_ocr.region`: where the stage text is, as `[left, top, width, height]`
   fractions of a 16:9 game view. Use `calibrate` to check it.
 - `stage_ocr.capture`: `"window"` (default; works windowed, borderless or

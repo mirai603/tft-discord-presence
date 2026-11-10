@@ -1,21 +1,16 @@
 """Turns game state into the fields Discord shows. Kept free of I/O so it's easy to test."""
 
 import hashlib
-import time
 
 from .riot_client import QUEUES
 from .log_watcher import ordinal
 
-IN_GAME_PHASES = {"InProgress", "Reconnect"}
 PHASE_TEXT = {
     "Menu": "In Main Menu",
     "Lobby": "In Lobby",
     "Matchmaking": "In Queue",
     "ReadyCheck": "Match Found",
-    "ChampSelect": "Loading In",
     "GameStart": "Loading In",
-    "WaitingForStats": "Game Over",
-    "PreEndOfGame": "Game Over",
     "EndOfGame": "Game Over",
 }
 
@@ -35,12 +30,11 @@ def _party_fields(session, show):
 def build(cfg, session, game, stage, rank, game_started_at):
     """Return a dict of pypresence.update() kwargs, or None to clear presence.
 
-    session: from LCU.session() (may be None if the client API isn't reachable)
-    game:    from live_client.parse() (None when not in a match)
+    session: from LogWatcher.session() (None when TFT isn't open)
+    game:    {"health", "placement"} from the screen reader during a match, else None
     """
-    queue = (session or {}).get("queue_name") or QUEUES.get((session or {}).get("queue_id"))
+    queue = QUEUES.get((session or {}).get("queue_id"))
     phase = (session or {}).get("phase")
-    is_tft = (session or {}).get("is_tft")
     show = cfg.get("show", {})
     assets = cfg.get("assets", {})
 
@@ -53,11 +47,8 @@ def build(cfg, session, game, stage, rank, game_started_at):
         "large_text": large_text,
     }
 
-    if not game and phase in IN_GAME_PHASES:
-        # Standalone TFT client: we know you're in a match but may have no stats.
-        game = {"health": None, "level": None, "gold": None, "players_alive": None}
-
-    if game:
+    if phase == "InProgress":
+        game = game or {}
         details_parts = [queue or "TFT"]
         if show.get("stage", True):
             if stage:
@@ -67,20 +58,11 @@ def build(cfg, session, game, stage, rank, game_started_at):
         out["details"] = " · ".join(details_parts)
 
         state_parts = []
-        if game["health"] is not None and show.get("health", True):
+        if game.get("health") is not None and show.get("health", True):
             state_parts.append(f"{game['health']} HP")
         if game.get("placement") and show.get("placement", True):
             team = (session or {}).get("queue_id") == 1160
             state_parts.append(("Team " if team else "") + ordinal(game["placement"]))
-        if game["level"] is not None and show.get("level", True):
-            state_parts.append(f"Lvl {game['level']}")
-        if game["gold"] is not None and show.get("gold", False):
-            state_parts.append(f"{game['gold']}g")
-        if game["players_alive"] and show.get("players_left", True):
-            state_parts.append(f"{game['players_alive']} left")
-        progress = (session or {}).get("progress")
-        if not state_parts and progress and progress != "InGame" and len(str(progress)) <= 40:
-            state_parts.append(str(progress))  # whatever Riot shows friends mid-game
         out["state"] = " · ".join(state_parts) if state_parts else "In Game"
 
         out["start"] = int(game_started_at)
@@ -90,8 +72,8 @@ def build(cfg, session, game, stage, rank, game_started_at):
             out["small_text"] = queue or "TFT"
         return out
 
-    # Not in a match: show client status only if it's a TFT lobby/queue.
-    if phase and phase in PHASE_TEXT and is_tft and show.get("lobby", True):
+    # Not in a match: menu / lobby / queue / game over.
+    if phase in PHASE_TEXT and show.get("lobby", True):
         out["details"] = PHASE_TEXT[phase]
         if phase == "Menu":
             return out  # no queue or party: you haven't picked a mode yet
@@ -114,7 +96,3 @@ def build(cfg, session, game, stage, rank, game_started_at):
 
     return None
 
-
-def game_start_timestamp(game_time_seconds, now=None):
-    """Discord shows 'elapsed' from this; derive it from the in-game clock."""
-    return (now or time.time()) - (game_time_seconds or 0)

@@ -438,9 +438,6 @@ class HealthReader(StageReader):
             self.diagnostics.save(strip, scale, box, scores, hp, place, self.double_up)
         return hp, place
 
-    def read_once(self):
-        return self.read_board()[0]
-
     def update(self):
         if not AVAILABLE:
             return self.hp
